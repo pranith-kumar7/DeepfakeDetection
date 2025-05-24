@@ -1,0 +1,30 @@
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Virtual environments
+tf_env/
+env/
+venv/
+
+# Dataset & temp files
+dataset_frames/
+temp/
+
+# Model files
+*.h5
+*.npy
+*.zip
+*.tar.gz
+*.pt
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE/editor configs
+.vscode/
+.idea/
+
+# Environment/config files
+.env
