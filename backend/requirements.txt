@@ -4,6 +4,7 @@ Pillow
 opencv-python
 flask
 flask-cors
+gunicorn
 pymongo
 efficientnet-pytorch
 einops
