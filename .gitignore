@@ -10,6 +10,7 @@ venv/
 # Dataset & temp files
 dataset_frames/
 temp/
+*.log
 
 # Model files
 *.h5

@@ -1,18 +1,42 @@
-import React,{useState} from 'react'
-import Navigation from './Components/Navigation'
-import { Outlet } from 'react-router-dom'
-import Footer from './Components/Footer'
+import React, { useEffect, useState } from 'react';
+import Navigation from './Components/Navigation';
+import { Outlet } from 'react-router-dom';
+import Footer from './Components/Footer';
+
 function RootLayout() {
-    let [search, getSearch] = useState("");
+  const [currentUser, setCurrentUser] = useState(null);
+
+  useEffect(() => {
+    const savedUser = localStorage.getItem('deepfake-user');
+    if (savedUser) {
+      try {
+        setCurrentUser(JSON.parse(savedUser));
+      } catch (error) {
+        localStorage.removeItem('deepfake-user');
+      }
+    }
+  }, []);
+
+  const handleAuthChange = (user) => {
+    if (user) {
+      localStorage.setItem('deepfake-user', JSON.stringify(user));
+      setCurrentUser(user);
+      return;
+    }
+
+    localStorage.removeItem('deepfake-user');
+    setCurrentUser(null);
+  };
+
   return (
-    <div>
-        <Navigation search={search} getSearch={getSearch}/>
-            <div style={{minHeight:'85vh'}}>
-            <Outlet context={{search}} />
-            </div>
-        <Footer/>
+    <div className="app-shell">
+      <Navigation currentUser={currentUser} onSignOut={() => handleAuthChange(null)} />
+      <main className="app-main">
+        <Outlet context={{ currentUser, setCurrentUser: handleAuthChange }} />
+      </main>
+      <Footer />
     </div>
-  )
+  );
 }
 
-export default RootLayout
+export default RootLayout;

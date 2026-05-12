@@ -1,5 +1,9 @@
-Flask
-flask-cors
-numpy
-tensorflow
+torch
+torchvision
 Pillow
+opencv-python
+flask
+flask-cors
+pymongo
+efficientnet-pytorch
+einops

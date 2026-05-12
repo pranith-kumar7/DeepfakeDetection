@@ -1,36 +1,48 @@
-// frontend/src/components/Navigation.js
 import React from 'react';
-import { Link } from 'react-router-dom';
-import { FaUserCircle } from 'react-icons/fa'; // User account icon
+import { Link, useNavigate } from 'react-router-dom';
+import { FaArrowRight, FaFingerprint, FaUserCircle } from 'react-icons/fa';
 
-function Navigation() {
+function Navigation({ currentUser, onSignOut }) {
+  const navigate = useNavigate();
+
+  const handleSignOut = () => {
+    onSignOut();
+    navigate('/');
+  };
+
   return (
-    <nav className="navbar navbar-expand-lg navbar-dark bg-dark">
-      <div className="container">
-        <Link className="navbar-brand fw-bolder" to="/">
-          MyDetector
+    <header className="topbar">
+      <div className="topbar__inner">
+        <Link className="brand" to="/">
+          <span className="brand__badge">
+            <FaFingerprint />
+          </span>
+          <span>
+            <strong>MyDetector</strong>
+            <small>Deepfake analysis</small>
+          </span>
         </Link>
 
-        <ul className="navbar-nav ms-auto align-items-center">
-          <li className="nav-item">
-            <Link className="nav-link fs-5 text-white fw-bold" to="/">
-              Home
+        <nav className="topbar__nav">
+          <Link to="/">Home</Link>
+          <Link to="/detect">Analyze</Link>
+          {currentUser ? (
+            <div className="account-chip">
+              <FaUserCircle />
+              <span>{currentUser.name}</span>
+              <button type="button" className="ghost-button" onClick={handleSignOut}>
+                Sign out
+              </button>
+            </div>
+          ) : (
+            <Link className="primary-link" to="/auth">
+              Sign in
+              <FaArrowRight />
             </Link>
-          </li>
-          <li className="nav-item">
-            <Link className="nav-link fs-5 text-white fw-bold" to="/detect">
-              Deepfake Detection
-            </Link>
-          </li>
-          <li className="nav-item">
-            <Link className="nav-link fs-5 text-white fw-bold d-flex align-items-center" to="/login">
-              <FaUserCircle className="me-2" size={22} />
-              My Account
-            </Link>
-          </li>
-        </ul>
+          )}
+        </nav>
       </div>
-    </nav>
+    </header>
   );
 }
 

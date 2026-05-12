@@ -1,48 +1,21 @@
 import React from 'react';
+import { Link } from 'react-router-dom';
 
 function Footer() {
   return (
-    <footer
-      style={{
-        backgroundColor: '#222',
-        color: '#eee',
-        textAlign: 'center',
-        padding: '20px 10px',
-        marginTop: '40px',
-        fontSize: '14px',
-        fontFamily: 'Arial, sans-serif',
-      }}
-    >
-      <p style={{ margin: '5px 0' }}>
-        © 2025 MyDetector. All rights reserved.
-      </p>
-      <p style={{ margin: '5px 0' }}>
-        Contact us at{' '}
-        <a href="mailto:support@yourapp.com" style={{ color: '#55aaff', textDecoration: 'none' }}>
-          support@MyDetector.com
-        </a>
-      </p>
-      <p style={{ margin: '5px 0' }}>
-        <a href="/" style={{ color: '#55aaff', margin: '0 10px', textDecoration: 'none' }}>
-          Home
-        </a>
-        |
-        <a href="/detect" style={{ color: '#55aaff', margin: '0 10px', textDecoration: 'none' }}>
-          Detect Video
-        </a>
-        |
-        <a href="/detect" style={{ color: '#55aaff', margin: '0 10px', textDecoration: 'none' }}>
-          Detect Image
-        </a>
-        |
-        <a href="/" style={{ color: '#55aaff', margin: '0 10px', textDecoration: 'none' }}>
-          About
-        </a>
-        |
-        <a href="/" style={{ color: '#55aaff', margin: '0 10px', textDecoration: 'none' }}>
-          Contact
-        </a>
-      </p>
+    <footer className="footer">
+      <div className="footer__content">
+        <div>
+          <h3>MyDetector</h3>
+          <p>Deepfake detection for images, videos, and frame-level model evidence.</p>
+        </div>
+
+        <div className="footer__links">
+          <Link to="/">Home</Link>
+          <Link to="/auth">Sign In</Link>
+          <Link to="/detect">Analyze</Link>
+        </div>
+      </div>
     </footer>
   );
 }

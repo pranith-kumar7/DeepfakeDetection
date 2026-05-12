@@ -1,65 +1,143 @@
-import numpy as np
+import torch
+from torchvision import transforms
+from PIL import Image
 import cv2
-import os
-import tempfile
-from tensorflow.keras.models import load_model
+import numpy as np
 
-IMG_SIZE = 128
-THRESHOLD = 0.6  # stricter threshold to catch fakes
-FRAME_SKIP = 10
+from model_loader import get_video_model
 
-model = load_model("best_model.h5")
 
-def detect_deepfake_video(file):
-    # Save the uploaded video file temporarily
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as temp:
-        file.save(temp.name)
-        path = temp.name
+def build_video_insight(result, confidence, fake_score, real_score, probs):
+    real_frames = int(np.sum(probs >= 0.5))
+    fake_frames = int(len(probs) - real_frames)
+    frame_confidences = np.maximum(probs, 1 - probs) * 100
+    winning_frames = max(real_frames, fake_frames)
+    consistency = (winning_frames / len(probs)) * 100
+    score_gap = abs(real_score - fake_score) * 100
 
-    predictions = []
+    if confidence >= 85:
+        certainty = "High"
+    elif confidence >= 65:
+        certainty = "Moderate"
+    else:
+        certainty = "Low"
+
+    if certainty == "Low":
+        summary = "Frame-level predictions are close together, so the video result is uncertain."
+    elif result == "Fake":
+        summary = "More sampled evidence leaned toward manipulated or synthetic content."
+    else:
+        summary = "More sampled evidence leaned toward authentic content."
+
+    return {
+        "certainty": certainty,
+        "summary": summary,
+        "scores": {
+            "fake": round(fake_score * 100, 2),
+            "real": round(real_score * 100, 2),
+        },
+        "frames": {
+            "analyzed": len(probs),
+            "fake_leaning": fake_frames,
+            "real_leaning": real_frames,
+            "min_confidence": round(float(np.min(frame_confidences)), 2),
+            "max_confidence": round(float(np.max(frame_confidences)), 2),
+            "avg_confidence": round(float(np.mean(frame_confidences)), 2),
+        },
+        "metrics": {
+            "confidence": round(confidence, 2),
+            "score_gap": round(score_gap, 2),
+            "uncertainty": round(100 - confidence, 2),
+            "consistency": round(consistency, 2),
+            "avg_frame_confidence": round(float(np.mean(frame_confidences)), 2),
+        },
+        "risk_level": "High" if result == "Fake" and confidence >= 70 else "Medium" if result == "Fake" else "Low",
+    }
+
+
+# -------------------------------
+# Preprocessing (FIXED)
+# -------------------------------
+transform = transforms.Compose([
+    transforms.Resize((224, 224)),  # ✅ FIXED
+    transforms.ToTensor(),
+    transforms.Normalize(
+        [0.485, 0.456, 0.406],
+        [0.229, 0.224, 0.225]
+    )
+])
+
+# -------------------------------
+# Video Prediction
+# -------------------------------
+def predict_video(video_path):
+    cap = cv2.VideoCapture(video_path)
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+
+    frames = []
+    max_frames = 8
+    frame_skip = max(1, total_frames // max_frames) if total_frames else 15
     frame_count = 0
 
-    try:
-        cap = cv2.VideoCapture(path)
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
 
-        if not cap.isOpened():
-            return {"error": "Could not open video."}
+        frame_count += 1
 
-        while cap.isOpened():
-            ret, frame = cap.read()
-            if not ret:
-                break
+        if frame_count % frame_skip != 0:
+            continue
 
-            if frame_count % FRAME_SKIP == 0:
-                try:
-                    resized_frame = cv2.resize(frame, (IMG_SIZE, IMG_SIZE))
-                    normalized_frame = resized_frame.astype("float32") / 255.0
-                    input_frame = np.expand_dims(normalized_frame, axis=0)
+        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        image = Image.fromarray(frame)
+        frames.append(transform(image))
 
-                    score = model.predict(input_frame, verbose=0).item()
-                    predictions.append(score)
+        if len(frames) >= max_frames:
+            break
 
-                except Exception as e:
-                    print(f"Error processing frame {frame_count}: {e}")
+    cap.release()
 
-            frame_count += 1
+    if not frames:
+        return {"error": "No frames processed"}
 
-        cap.release()
+    batch = torch.stack(frames)
 
-        if predictions:
-            avg_pred = np.mean(predictions)
-            result = "FAKE" if avg_pred < THRESHOLD else "REAL"
-            return {
-                "result": result,
-                "confidence": round(avg_pred * 100, 2),
-                "frames_processed": len(predictions),
-                "processing_time": "N/A",  # Add timing if you want
-                "analyzed_frames": len(predictions),
-                "performance": [round(p * 100, 2) for p in predictions],  # confidence % per frame
-            }
-        else:
-            return {"error": "No frames processed from the video."}
+    with torch.no_grad():
+        output = get_video_model()(batch)
+        probs = torch.sigmoid(output).detach().cpu().numpy().reshape(-1)
 
-    finally:
-        if os.path.exists(path):
-            os.remove(path)
+    real_score = float(np.mean(probs))
+    fake_score = 1 - real_score
+
+    if real_score >= fake_score:
+        result = "Real"
+        confidence = real_score
+    else:
+        result = "Fake"
+        confidence = fake_score
+
+    frame_scores = []
+    for index, prob in enumerate(probs, start=1):
+        frame_real_score = float(prob)
+        frame_fake_score = 1 - frame_real_score
+        frame_result = "Real" if frame_real_score >= frame_fake_score else "Fake"
+        frame_scores.append({
+            "frame": index,
+            "result": frame_result,
+            "confidence": round(max(frame_real_score, frame_fake_score) * 100, 2),
+            "fake_score": round(frame_fake_score * 100, 2),
+            "real_score": round(frame_real_score * 100, 2),
+        })
+
+    return {
+        "result": result,
+        "confidence": round(confidence * 100, 2),
+        "fake_score": round(fake_score * 100, 2),
+        "real_score": round(real_score * 100, 2),
+        "raw_probability": round(real_score, 6),
+        "frames_analyzed": len(frames),
+        "performance": [round(float(max(prob, 1 - prob)) * 100, 2) for prob in probs],
+        "frame_scores": frame_scores,
+        "insight": build_video_insight(result, confidence * 100, fake_score, real_score, probs),
+    }
