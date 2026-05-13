@@ -1,9 +1,15 @@
 import torch
 from torchvision import transforms
-from PIL import Image
+from PIL import Image, ImageOps
 import tempfile
 import os
 
+from detector_config import (
+    ALLOW_LOCAL_MODEL_FALLBACK,
+    IMAGE_DETECTOR_BACKEND,
+    IMAGE_FAKE_THRESHOLD,
+    IMAGE_UNCERTAIN_MARGIN,
+)
 from model_loader import get_image_model
 
 
@@ -17,7 +23,9 @@ def build_image_insight(result, confidence, fake_score, real_score):
     else:
         certainty = "Low"
 
-    if certainty == "Low":
+    if result == "Uncertain":
+        summary = "The detector did not find a large enough gap between fake and real evidence."
+    elif certainty == "Low":
         summary = "The model is not strongly confident. Treat this as a signal, not a final judgement."
     elif result == "Fake":
         summary = "The image contains patterns the model associates with manipulated or synthetic content."
@@ -41,11 +49,7 @@ def build_image_insight(result, confidence, fake_score, real_score):
     }
 
 
-# -------------------------------
-# Preprocessing (FIXED)
-# -------------------------------
 transform = transforms.Compose([
-    transforms.Resize((224, 224)),  # ✅ FIXED
     transforms.ToTensor(),
     transforms.Normalize(
         [0.485, 0.456, 0.406],
@@ -53,16 +57,34 @@ transform = transforms.Compose([
     )
 ])
 
-# -------------------------------
-# Prediction
-# -------------------------------
 def detect_deepfake(file):
     with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as temp:
         file.save(temp.name)
         path = temp.name
 
     try:
-        image = Image.open(path).convert("RGB")
+        image = ImageOps.exif_transpose(Image.open(path)).convert("RGB")
+
+        if IMAGE_DETECTOR_BACKEND == "huggingface":
+            try:
+                from hf_detectors import get_hf_image_detector
+
+                result = get_hf_image_detector().predict(
+                    image,
+                    threshold=IMAGE_FAKE_THRESHOLD,
+                    uncertain_margin=IMAGE_UNCERTAIN_MARGIN,
+                )
+                result["insight"] = build_image_insight(
+                    result["result"],
+                    result["confidence"],
+                    result["fake_score"] / 100,
+                    result["real_score"] / 100,
+                )
+                return result
+            except Exception as error:
+                if not ALLOW_LOCAL_MODEL_FALLBACK:
+                    return {"error": f"Hugging Face image detector failed: {error}"}
+
         img = transform(image).unsqueeze(0)
 
         with torch.no_grad():
@@ -70,10 +92,7 @@ def detect_deepfake(file):
             fake_score = torch.sigmoid(output).item()
             real_score = 1 - fake_score
 
-        # -------------------------------
-        # Threshold tuning
-        # -------------------------------
-        THRESHOLD = 0.5  # reset to normal
+        THRESHOLD = IMAGE_FAKE_THRESHOLD
 
         if fake_score > THRESHOLD:
             result = "Fake"

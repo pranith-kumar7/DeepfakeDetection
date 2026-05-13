@@ -1,5 +1,6 @@
 import torch
 from torch import nn
+from torch.nn import functional as F
 
 
 class Bottleneck(nn.Module):
@@ -35,10 +36,13 @@ class Bottleneck(nn.Module):
 class NPRModel(nn.Module):
     def __init__(self):
         super().__init__()
+        self.unfold_size = 2
+        self.unfold_index = 0
         self.inplanes = 64
-        self.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
+        self.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=2, padding=1, bias=False)
         self.bn1 = nn.BatchNorm2d(64)
         self.relu = nn.ReLU(inplace=True)
+        self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
         self.layer1 = self._make_layer(64, 3)
         self.layer2 = self._make_layer(128, 4, stride=2)
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
@@ -65,8 +69,25 @@ class NPRModel(nn.Module):
 
         return nn.Sequential(*layers)
 
+    @staticmethod
+    def interpolate(image, factor):
+        return F.interpolate(
+            F.interpolate(image, scale_factor=factor, mode="nearest", recompute_scale_factor=True),
+            scale_factor=1 / factor,
+            mode="nearest",
+            recompute_scale_factor=True,
+        )
+
     def forward(self, x):
+        _, _, height, width = x.shape
+        if height % 2 == 1:
+            x = x[:, :, :-1, :]
+        if width % 2 == 1:
+            x = x[:, :, :, :-1]
+
+        x = (x - self.interpolate(x, 0.5)) * (2.0 / 3.0)
         x = self.relu(self.bn1(self.conv1(x)))
+        x = self.maxpool(x)
         x = self.layer1(x)
         x = self.layer2(x)
         x = torch.flatten(self.avgpool(x), 1)

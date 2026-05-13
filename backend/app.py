@@ -8,7 +8,21 @@ from pymongo import MongoClient
 from pymongo.errors import PyMongoError
 from werkzeug.security import check_password_hash, generate_password_hash
 
+from detector_config import (
+    ALLOW_LOCAL_MODEL_FALLBACK,
+    DEVICE,
+    IMAGE_DETECTOR_BACKEND,
+    IMAGE_FAKE_THRESHOLD,
+    IMAGE_HF_MODEL_IDS,
+    IMAGE_UNCERTAIN_MARGIN,
+    VIDEO_DETECTOR_BACKEND,
+    VIDEO_FAKE_THRESHOLD,
+    VIDEO_HF_MODEL_ID,
+    VIDEO_NUM_FRAMES,
+    VIDEO_UNCERTAIN_MARGIN,
+)
 from detection import detect_deepfake
+from model_loader import IMAGE_MODEL_PATH, VIDEO_MODEL_PATH
 from video_detection import predict_video
 
 app = Flask(__name__)
@@ -40,6 +54,30 @@ def serialize_user(user):
         "name": user["name"],
         "email": user["email"],
         "created_at": user.get("created_at"),
+    }
+
+
+def get_model_file_status(model_path):
+    if not model_path.exists():
+        return {
+            "status": "missing",
+            "path": str(model_path),
+        }
+
+    with model_path.open("rb") as model_file:
+        header = model_file.read(64)
+
+    if header.startswith(b"version https://git-lfs.github.com/spec"):
+        return {
+            "status": "git_lfs_pointer",
+            "path": str(model_path),
+            "size_bytes": model_path.stat().st_size,
+        }
+
+    return {
+        "status": "available",
+        "path": str(model_path),
+        "size_bytes": model_path.stat().st_size,
     }
 
 
@@ -84,6 +122,27 @@ def health():
         db_status = "disconnected"
 
     return jsonify({"status": "ok", "database": db_status})
+
+
+@app.get("/health/models")
+def model_health():
+    return jsonify({
+        "image_model": get_model_file_status(IMAGE_MODEL_PATH),
+        "video_model": get_model_file_status(VIDEO_MODEL_PATH),
+        "active_config": {
+            "device": DEVICE,
+            "allow_local_model_fallback": ALLOW_LOCAL_MODEL_FALLBACK,
+            "image_backend": IMAGE_DETECTOR_BACKEND,
+            "image_hf_model_ids": IMAGE_HF_MODEL_IDS,
+            "image_fake_threshold": IMAGE_FAKE_THRESHOLD,
+            "image_uncertain_margin": IMAGE_UNCERTAIN_MARGIN,
+            "video_backend": VIDEO_DETECTOR_BACKEND,
+            "video_hf_model_id": VIDEO_HF_MODEL_ID,
+            "video_num_frames": VIDEO_NUM_FRAMES,
+            "video_fake_threshold": VIDEO_FAKE_THRESHOLD,
+            "video_uncertain_margin": VIDEO_UNCERTAIN_MARGIN,
+        },
+    })
 
 
 @app.post("/auth/signup")

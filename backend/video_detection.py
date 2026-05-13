@@ -4,10 +4,19 @@ from PIL import Image
 import cv2
 import numpy as np
 
+from detector_config import (
+    ALLOW_LOCAL_MODEL_FALLBACK,
+    VIDEO_DETECTOR_BACKEND,
+    VIDEO_FAKE_THRESHOLD,
+    VIDEO_UNCERTAIN_MARGIN,
+)
 from model_loader import get_video_model
 
 
 def build_video_insight(result, confidence, fake_score, real_score, probs):
+    if len(probs) == 0:
+        probs = np.array([real_score])
+
     real_frames = int(np.sum(probs >= 0.5))
     fake_frames = int(len(probs) - real_frames)
     frame_confidences = np.maximum(probs, 1 - probs) * 100
@@ -22,7 +31,9 @@ def build_video_insight(result, confidence, fake_score, real_score, probs):
     else:
         certainty = "Low"
 
-    if certainty == "Low":
+    if result == "Uncertain":
+        summary = "The detector did not find a large enough gap between fake and real video evidence."
+    elif certainty == "Low":
         summary = "Frame-level predictions are close together, so the video result is uncertain."
     elif result == "Fake":
         summary = "More sampled evidence leaned toward manipulated or synthetic content."
@@ -71,6 +82,30 @@ transform = transforms.Compose([
 # Video Prediction
 # -------------------------------
 def predict_video(video_path):
+    if VIDEO_DETECTOR_BACKEND == "huggingface":
+        try:
+            from hf_detectors import get_hf_video_detector
+
+            result = get_hf_video_detector().predict(
+                video_path,
+                threshold=VIDEO_FAKE_THRESHOLD,
+                uncertain_margin=VIDEO_UNCERTAIN_MARGIN,
+            )
+            if "error" in result:
+                return result
+            probs = np.array([result["real_score"] / 100], dtype=float)
+            result["insight"] = build_video_insight(
+                result["result"],
+                result["confidence"],
+                result["fake_score"] / 100,
+                result["real_score"] / 100,
+                probs,
+            )
+            return result
+        except Exception as error:
+            if not ALLOW_LOCAL_MODEL_FALLBACK:
+                return {"error": f"Hugging Face video detector failed: {error}"}
+
     cap = cv2.VideoCapture(video_path)
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
 

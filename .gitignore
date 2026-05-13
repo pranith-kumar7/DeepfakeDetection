@@ -18,6 +18,8 @@ temp/
 *.zip
 *.tar.gz
 *.pt
+backend/pretrained_model/huggingface/
+deepfake_detection/
 
 # OS files
 .DS_Store
